@@ -1,0 +1,113 @@
+######F5 PS sevice creationNew service creation####### 
+
+#######PS Module verification################
+if (Get-Module -ListAvailable -Name F5-LTM  ) {
+    Write-Host "F5-LTM Module Exsist"
+} else {
+    Write-Host "F5-LTM Module does not exist"
+    Install-Module F5-LTM
+}
+
+########Var#########
+
+$f5IP = '192.100.100.100'
+$f5username = 'admin'
+#$f5password = Read-Host 'Specify F5 Password' -AsSecureString
+###########Put a password for multiple run###############
+$f5password = ConvertTo-SecureString "somepasword" -AsPlainText -Force
+
+
+
+###################Application Details#####################
+$virtualservicename = 'www.site1.com'
+$virtualserviceip = '192.168.20.103'
+$virtualserviceport = '443'
+$nodeip = '192.168.10.14'
+$nodeport = '443'
+
+
+###########################Auto Choose SSL Profile##############################################################
+# We can choose the Client SSL profile for you based on Virtual service name (Name convention is important)    #
+# F.E www.test.com > test.com Client SSL profile                                                               #
+# If you want to choose it manualy, change the value of autossl to '0'.                                        #
+#                                                                                                              #
+################################################################################################################
+
+####################SSL Menu###############
+$autossl = '1'                                                                                             
+$clientssl = 'clientssl'                                                                                       
+$serverssl = 'serverssl-secure'  
+
+if ($virtualservicename.IndexOf('www.site1.com') -notlike '-1' -and $autossl -ne '0' ) {
+	$clientssl = $profile1
+	'SSL Profile = profile1'
+} elseif ($virtualservicename.IndexOf('www.site.com') -notlike '-1' -and $autossl -ne '0' ) {
+	$clientssl = $profile2
+	'SSL Profile = profile 2'
+} elseif ($virtualservicename.IndexOf('site3') -notlike '-1' -and $autossl -ne '0' ) {
+	$clientssl = $profile3
+	'SSL Profile = profile 3'
+} elseif ($virtualservicename.IndexOf('site4') -notlike '-1' -and $autossl -ne '0' ) {
+	$clientssl = $profile4
+	SSL Profile = 'profile 4'
+} elseif ($virtualservicename.IndexOf('site5') -notlike '-1' -and $autossl -ne '0' ) {
+	$clientssl = $profile5
+	SSL Profile = 'profile 5'
+} else {
+"No auto SSL policy found or autossl = 0, Choosen SSL profile: $clientssl "
+}
+
+
+################SSL Profile choose####################
+$site1 = 'wildcard_site1'
+$ekzssl = 'wildcard_www.site2.com'
+$grandcitypropertyssl = 'wildcard_site3'
+$dslmssl = 'www.site4'
+$ssoaroundtownssl = 'sso.site5'
+
+
+
+#################################Enviroment Varibals, Mostly not should being changed################
+$nodename = ( foreach {$virtualservicename +  "_node"} )
+$poolname = ( foreach {$virtualservicename +  "_pool"} )
+$enablevlan = 'External'
+$applicationprofile = 'http'
+$snatpool = 'Snat_Pool'
+
+$checknode = Get-Node -Address $nodeip
+if ($checknode.address -notlike $nodeip ) {
+"No node exsist"
+New-Node -name $nodename -Address $nodeip
+} else {
+$nodename = $checknode.name
+$nodeip = $checknode.address
+"Node is exsist, Using $nodename "
+}
+
+
+
+##########Login################
+
+
+
+$mycreds = New-Object System.Management.Automation.PSCredential $f5username, $f5password
+New-F5Session -LTMName $f5IP -LTMCredentials $mycreds
+
+########Node creation#############
+New-Node -name $nodename -Address $nodeip
+
+
+
+##################Pool creation####################
+new-pool -Name $poolname -LoadBalancingMode round-robin
+Add-PoolMonitor -Name https -PoolName $poolname
+Add-PoolMember -PoolName $poolname -Name $nodename -PortNumber $nodeport -Status Enabled
+
+
+
+
+
+
+##################Virtual Virtual Service configuration####################
+
+ New-VirtualServer -Name $virtualservicename -DestinationIP $virtualserviceip -DestinationPort $virtualserviceport  -ipProtocol tcp -DefaultPool $poolname -enabled true -SourceAddressTranslationType snat -SourceAddressTranslationPool $snatpool -VlanEnabled $enablevlan -ProfileNames $applicationprofile , $clientssl , $serverssl
